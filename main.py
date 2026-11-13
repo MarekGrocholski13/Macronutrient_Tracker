@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from drafter import *
+from bakery import assert_equal
 
 set_website_title("Macronutrient Tracker")
 set_site_information(
@@ -550,6 +551,153 @@ def clear_foods(state: State) -> Page:
     return user_food_list(state)
 
 
-print("Program Loaded Successfully")
+# ==========================================
+# UNIT TESTS USING bakery assert_equal
+# ==========================================
+
+test_food = Food(
+    name="Apple",
+    grams=100.0,
+    cals=52.0,
+    protein=0.3,
+    fats=0.2,
+    fiber=2.4,
+    carbs=13.8,
+    category="Fruits"
+)
+
+test_state = State(
+    all_foods=[test_food],
+    search_query="",
+    matching_foods=[],
+    desired_foods=[],
+    macro_totals=MacroTotals(0.0, 0.0, 0.0, 0.0, 0.0),
+    error_message="",
+    desired_grams="",
+    selected_food=None,
+    high_protein_filter=False
+)
+
+# 1. Test parse_food helper
+mock_line = "Banana\t\t100\t89\t1.1\t0.3\t\t2.6\t22.8\tFruits"
+parsed_result = parse_food(mock_line)
+assert_equal(parsed_result.name, "Banana")
+assert_equal(parsed_result.grams, 100.0)
+assert_equal(parsed_result.cals, 89.0)
+
+# 2. Test find_foods helper
+assert_equal(find_foods([test_food], "appl"), [test_food])
+assert_equal(find_foods([test_food], "Fruits"), [test_food])
+assert_equal(find_foods([test_food], "pizza"), [])
+assert_equal(find_foods([test_food], ""), [])
+
+# 3. Test calculate_totals helper
+selected_item = SelectedFood(food=test_food, desired_grams=200.0)
+calculated_totals = calculate_totals([selected_item])
+assert_equal(calculated_totals.total_calories, 104.0)
+assert_equal(calculated_totals.total_protein, 0.6)
+assert_equal(calculated_totals.total_carbs, 27.6)
+
+# 4. Test index route page generation
+assert_equal(
+    index(test_state),
+    Page(
+        test_state,
+        [
+            Header("Macronutrient Tracker"),
+            "",
+            "Calories: 0.0",
+            "Protein: 0.0g",
+            "Carbs: 0.0g",
+            "Fat: 0.0g",
+            TextBox("search_query"),
+            CheckBox("high_protein_filter", label="High Protein Only (>= 10g)"),
+            Button("Search", "search"),
+            Button("My Foods", "user_food_list")
+        ]
+    )
+)
+
+# 5. Test no_food_found_page route
+assert_equal(
+    no_food_found_page(test_state),
+    Page(
+        test_state,
+        [
+            Header("No results found"),
+            "Try a different food or category",
+            Button("Home", "index")
+        ]
+    )
+)
+
+# 6. Test view_food route
+assert_equal(
+    view_food(test_state, "Apple"),
+    Page(
+        test_state,
+        [
+            Header("Apple"),
+            "",
+            "Serving Size: 100.0 g",
+            "Calories: 52.0",
+            "Protein: 0.3 g",
+            "Carbs: 13.8 g",
+            "Fat: 0.2 g",
+            "Fiber: 2.4 g",
+            "Enter desired grams:",
+            TextBox("desired_grams"),
+            Button("Add Food", "add_food"),
+            Button("Back", "index")
+        ]
+    )
+)
+
+# 7. Test search route
+assert_equal(
+    search(test_state, "Apple"),
+    Page(
+        test_state,
+        [
+            Header("Search Results"),
+            Row(
+                "Apple - Protein: 0.3g",
+                Button("View Food", "view_food", arguments=[Argument("food_name", "Apple")])
+            ),
+            Button("Back", "index")
+        ]
+    )
+)
+
+# 8. Test delete_food route function
+state_with_food = State(
+    all_foods=[test_food],
+    search_query="",
+    matching_foods=[],
+    desired_foods=[SelectedFood(food=test_food, desired_grams=100.0)],
+    macro_totals=MacroTotals(52.0, 0.3, 13.8, 0.2, 2.4),
+    error_message="",
+    desired_grams="",
+    selected_food=test_food,
+    high_protein_filter=False
+)
+expected_state_after_delete = State(
+    all_foods=[test_food],
+    search_query="",
+    matching_foods=[],
+    desired_foods=[],
+    macro_totals=MacroTotals(0.0, 0.0, 0.0, 0.0, 0.0),
+    error_message="",
+    desired_grams="",
+    selected_food=test_food,
+    high_protein_filter=False
+)
+assert_equal(
+    delete_food(state_with_food, "Apple"),
+    user_food_list(expected_state_after_delete)
+)
+
+
+print("Program Loaded Successfully and All Unit Tests Passed!")
 
 start_server(INITIAL_STATE)
