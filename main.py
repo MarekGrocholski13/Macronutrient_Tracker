@@ -4,7 +4,14 @@ from drafter import *
 set_website_title("Macronutrient Tracker")
 set_site_information(
     author="Marek Grocholski",
-    description="A website that allows you to track the foods people want to consume while including the macronutrients for each and the total Macronutrients",
+    description=""" will take in user input for a food or category of food and will give foods that
+    are similar to what was input, if what the user input is not in the data provided then an error
+    message will appear prompting them to go back to the home page. The user then is able to choose
+    from those list of foods and can view each food individually showing the macronutrients. The user
+    is then given the option of adding the food where they must first enter a specific amount of grams
+    of that food and once entered it will calculate the macronutrients of that food, update the list of
+    foods, update the total macronutrients for all of the foods in the list and takes them to the site
+    where they can see the new list of the foods they have added as well as the total macronutrients""",
     sources="Drafter docs, LLM's, Github and Classmates",
     planning=["CS1_Final_porject_1.pdf"],
     links=["https://github.com/prasertcbs/basic-dataset/blob/master/nutrients.csv"]
