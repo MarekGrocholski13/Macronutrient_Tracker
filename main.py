@@ -16,7 +16,12 @@ set_site_information(
     planning=["CS1_Final_porject_1.pdf"],
     links=["https://github.com/prasertcbs/basic-dataset/blob/master/nutrients.csv"]
 )
-hide_debug_information()
+
+try:
+    hide_debug_information()
+except Exception:
+    pass
+
 set_website_framed(False)
 
 food_data="nutrients - nutrients (3).tsv"
@@ -44,6 +49,7 @@ class Food:
     fiber:float
     carbs:float
     category:str
+
 @dataclass
 class SelectedFood:
     """
@@ -90,6 +96,7 @@ class State:
     error_message(str): This is the error message that appears if a food/category they typed is not in the data
     desired_grams(str): this is the weight of the food the user consumes that the user inputs into a textbox after picking a food and uses this information to calculate the total macronutrients
     selected_food(Food): the food the user ends up picking from the matching_foods list
+    high_protein_filter(bool): Checkbox state for filtering high-protein items
     """
     all_foods:list[Food]
     search_query:str
@@ -99,8 +106,7 @@ class State:
     error_message:str
     desired_grams:str
     selected_food:Food | None
-
-
+    high_protein_filter:bool
 
 
 def parse_food(line:str)->Food:
@@ -158,9 +164,12 @@ def load_foods()->list[Food]:
         macronutrient information from the data file.
     """
     food_items=[]
-    with open(food_data) as file:
-        for line in file:
-            food_items.append(parse_food(line))
+    try:
+        with open(food_data) as file:
+            for line in file:
+                food_items.append(parse_food(line))
+    except FileNotFoundError:
+        pass
     return food_items
 
 FOODS=load_foods()
@@ -175,10 +184,11 @@ INITIAL_STATE = State(
     ),
     error_message="",
     desired_grams="",
-    selected_food=None
+    selected_food=None,
+    high_protein_filter=False
 )
 
-def find_foods(foods:list[Food], query:str)->list[Food]:
+def find_foods(foods:list[Food], query:str, high_protein_only:bool=False)->list[Food]:
     """
     Finds food items that match the given query. Ignores capitalization.
     As long as the query is a substring of the food name, it is considered a match.
@@ -186,6 +196,7 @@ def find_foods(foods:list[Food], query:str)->list[Food]:
     Args:
         foods (list[Food]): A list of Food objects to search.
         query (str): The search query string.
+        high_protein_only (bool): Optional flag to filter high protein items.
     Returns:
         list[Food]: A list of Food objects that match the query.
     """
@@ -198,15 +209,15 @@ def find_foods(foods:list[Food], query:str)->list[Food]:
     query_lower=query.lower()
 
     for food in foods:
-        if query_lower in food.name.lower():
-            results.append(food)
-        elif query_lower in food.category.lower():
+        matches = (query_lower in food.name.lower()) or (query_lower in food.category.lower())
+        if matches:
+            if high_protein_only and food.protein < 10.0:
+                continue
             results.append(food)
 
     return results
 
 
-#not finished continue working        
 @route
 def index(state: State) -> Page:
     """
@@ -221,12 +232,14 @@ def index(state: State) -> Page:
     Page: gives a page that will work as the main hub allowing users to navigate to different routes
     with buttons and textboxes
     """
+    error_display = f"Error: {state.error_message}" if state.error_message else ""
+    state.error_message = ""
 
     return Page(
         state,
         [
             Header("Macronutrient Tracker"),
-
+            error_display,
             f"Calories: {state.macro_totals.total_calories:.1f}",
 
             f"Protein: {state.macro_totals.total_protein:.1f}g",
@@ -236,6 +249,7 @@ def index(state: State) -> Page:
             f"Fat: {state.macro_totals.total_fats:.1f}g",
 
             TextBox("search_query"),
+            CheckBox("high_protein_filter", label="High Protein Only (>= 10g)"),
 
             Button(
                 "Search",
@@ -304,32 +318,26 @@ def add_food(state: State, desired_grams: str) -> Page:
         state.error_message = "Grams must be greater than zero."
         return view_food(state, food.name)
 
-    # Create a SelectedFood object using the selected food
-    # and the number of grams entered by the user.
     selected_food = SelectedFood(
         food=food,
         desired_grams=grams
     )
 
-    # Add the food to the user's list.
     state.desired_foods.append(selected_food)
 
-    # Recalculate all macronutrient totals.
     state.macro_totals = calculate_totals(
         state.desired_foods
     )
 
-    # Clear the input and any previous error.
     state.desired_grams = ""
     state.error_message = ""
 
-    # Return the updated food list.
     return user_food_list(state)
 
 
 
 @route
-def search(state: State, search_query:str) -> Page:
+def search(state: State, search_query:str, high_protein_filter:bool=False) -> Page:
     """
     This route function acts as the page that displays all of the foods that are similar to whatever food
     the user may have typed in, it also allows the user to click on the view button that lets the user see the details
@@ -341,11 +349,12 @@ def search(state: State, search_query:str) -> Page:
     search_query
     """
     state.search_query = search_query
-
+    state.high_protein_filter = high_protein_filter
 
     results = find_foods(
         state.all_foods,
-        search_query
+        search_query,
+        high_protein_filter
     )
 
     if not results:
@@ -357,7 +366,7 @@ def search(state: State, search_query:str) -> Page:
 
         rows.append(
             Row(
-                food.name,
+                f"{food.name} - Protein: {food.protein}g",
                 Button(
                     "View Food",
                     "view_food",
@@ -403,18 +412,18 @@ def view_food(state: State, food_name: str) -> Page:
             food = item
             break
 
-    # Handle the case where the food cannot be found
     if food is None:
         return no_food_found_page(state)
 
-    # Store the selected food in the state
     state.selected_food = food
+    error_display = f"Error: {state.error_message}" if state.error_message else ""
+    state.error_message = ""
 
     return Page(
         state,
         [
             Header(food.name),
-
+            error_display,
             f"Serving Size: {food.grams} g",
             f"Calories: {food.cals}",
             f"Protein: {food.protein} g",
@@ -458,17 +467,20 @@ def user_food_list(state:State)->Page:
     food_rows = []
 
     for item in state.desired_foods:
-
         scale = item.desired_grams / item.food.grams
 
         food_rows.append(
             Row(
-                f"{item.food.name}",
-                f"{item.desired_grams} g",
-                f"Calories: {item.food.cals * scale:.1f}",
-                f"Protein: {item.food.protein * scale:.1f}",
-                f"Carbs: {item.food.carbs * scale:.1f}",
-                f"Fat: {item.food.fats * scale:.1f}"
+                f"{item.food.name} ({item.desired_grams} g)",
+                f"Cal: {item.food.cals * scale:.1f}",
+                f"P: {item.food.protein * scale:.1f}g",
+                f"C: {item.food.carbs * scale:.1f}g",
+                f"F: {item.food.fats * scale:.1f}g",
+                Button(
+                    "Delete",
+                    "delete_food",
+                    arguments=[Argument("food_name", item.food.name)]
+                )
             )
         )
 
@@ -485,6 +497,7 @@ def user_food_list(state:State)->Page:
         ]
         + food_rows +
         [
+            Button("Clear All", "clear_foods"),
             Button("Back", "index")
         ]
     )
@@ -511,9 +524,32 @@ def no_food_found_page(state:State)->Page:
             Button("Home","index"),
         ],
     )
-print("Program Loaded Succesfully")
+
+@route
+def delete_food(state: State, food_name: str) -> Page:
+    """
+    Deletes a specific selected food from the user's added food list 
+    and updates the accumulated macro totals.
+    """
+    updated_foods = []
+    for item in state.desired_foods:
+        if item.food.name != food_name:
+            updated_foods.append(item)
+            
+    state.desired_foods = updated_foods
+    state.macro_totals = calculate_totals(state.desired_foods)
+    return user_food_list(state)
+
+@route
+def clear_foods(state: State) -> Page:
+    """
+    Clears all added food items and resets macro totals.
+    """
+    state.desired_foods = []
+    state.macro_totals = MacroTotals(0.0, 0.0, 0.0, 0.0, 0.0)
+    return user_food_list(state)
 
 
-
+print("Program Loaded Successfully")
 
 start_server(INITIAL_STATE)
